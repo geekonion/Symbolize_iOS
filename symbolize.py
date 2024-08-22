@@ -275,12 +275,18 @@ def build_backtrace(frames, used_images, max_width):
         image_dict = used_images[imageIndex]
         image_name = image_dict.get('name')
         image_base = image_dict.get('base')
+        # {'size': 0, 'source': 'A', 'base': 0, 'uuid': '00000000-0000-0000-0000-000000000000'}
+        if image_base == 0:
+            print('unexpected image {}'.format(image_dict))
 
         func_addr = image_base + image_offset
 
         frame_obj = Frame()
         frame_obj.idx = idx
-        frame_obj.image_name = image_name
+        if image_name:
+            frame_obj.image_name = image_name
+        else:
+            frame_obj.image_name = '???'
         frame_obj.max_width = max_width
         frame_obj.load_addr = func_addr
         frame_obj.base = image_base
@@ -636,6 +642,9 @@ def symbolize_thread_list(last_exception_obj, thread_list):
             continue
 
         image_name = frame.image_name
+        if image_name == '???':
+            continue
+
         image_info = g_name_info_map[image_name]
         uuid = image_info[0]
         # 根据uuid找符号文件
@@ -966,8 +975,11 @@ class Frame:
         if self.max_width == 0:
             self.max_width = g_max_name_width
 
+        if self.image_name == '???':
+            frame_des += '{:<4}{:<{}}  {:#x} ???\n'. \
+                format(self.idx, self.image_name, self.max_width, self.load_addr)
         # atos有时不输出offset
-        if offset == -1:
+        elif offset == -1:
             frame_des += '{:<4}{:<{}}  {:#x} {}\n'. \
                 format(self.idx, self.image_name, self.max_width, self.load_addr, name_or_addr)
         else:
