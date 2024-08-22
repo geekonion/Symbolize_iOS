@@ -1104,10 +1104,12 @@ if __name__ == '__main__':
     if args.verbose:
         g_options.verbose = True
 
+    input_file = args.file.replace('"', '').replace("'", '')
     if args.dsym:
         g_options.dsym = args.dsym
+    else:
+        g_options.dsym = os.path.dirname(input_file)
 
-    input_file = args.file.replace('"', '').replace("'", '')
     if input_file.endswith('.ips') or input_file.endswith('.crash'):
         final_report = symbolize_crash_report(input_file)
         ext = os.path.splitext(input_file)[1]
