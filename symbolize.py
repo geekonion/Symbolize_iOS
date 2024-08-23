@@ -98,8 +98,8 @@ def symbolize_ips_file(file_path):
                 max_width = name_len
 
         final_report = ''
+        report_header, last_exception = build_header(data_dict)
         image_list = build_images(data_dict)
-        report_header, last_exception = build_header(data_dict, used_images, max_width)
 
         last_exception_obj = None
         if last_exception:
@@ -128,14 +128,19 @@ def symbolize_ips_file(file_path):
     return final_report
 
 
-def build_header(data_dict, used_images, max_width):
-    report_header = """
--------------------------------------
+def build_header(data_dict):
+    report_header = """-------------------------------------
 Translated Report (Full Report Below)
 -------------------------------------
 """
-    report_header += ' \n'
+    report_header += '\n'
     report_header += 'Incident Identifier: {}\n'.format(data_dict.get('incident'))
+
+    storeInfo = data_dict.get('storeInfo')
+    beta_identifier = storeInfo.get('deviceIdentifierForVendor')
+    if beta_identifier:
+        report_header += 'Beta Identifier:     {}\n'.format(beta_identifier)
+
     crash_reporterKey = data_dict.get('crashReporterKey')
     if crash_reporterKey:
         report_header += 'CrashReporter Key:   {}\n'.format(crash_reporterKey)
@@ -158,7 +163,6 @@ Translated Report (Full Report Below)
         if DTAppStoreToolsBuild:
             report_header += 'AppStoreTools:       {}\n'.format(DTAppStoreToolsBuild)
 
-    storeInfo = data_dict.get('storeInfo')
     if storeInfo:
         applicationVariant = storeInfo.get('applicationVariant')
         if applicationVariant:
@@ -176,7 +180,7 @@ Translated Report (Full Report Below)
     report_header += 'Parent Process:      {} [{}]\n'.format(data_dict.get('parentProc'), data_dict.get('parentPid'))
     report_header += 'Coalition:           {} [{}]\n'. \
         format(data_dict.get('coalitionName'), data_dict.get('coalitionID'))
-    report_header += ' \n'
+
     report_header += 'Date/Time:           {}\n'.format(data_dict.get('captureTime'))
     report_header += 'Launch Time:         {}\n'.format(data_dict.get('procLaunch'))
 
@@ -195,7 +199,7 @@ Translated Report (Full Report Below)
         report_header += 'Baseband Version:    {}\n'.format(basebandVersion)
     report_header += 'Report Version:      {}\n'.format(data_dict.get(''))
 
-    report_header += ' \n'
+    report_header += '\n'
 
     exception = data_dict.get('exception')
     if exception:
@@ -234,16 +238,16 @@ Translated Report (Full Report Below)
         if proc:
             report_header += 'Terminating Process: {} [{}]\n'.format(proc, termination.get('byPid'))
 
-    report_header += ' \n'
+    report_header += '\n'
     report_header += 'Triggered by Thread:  {}\n'.format(data_dict.get('faultingThread'))
 
     asi = data_dict.get('asi')
     if asi:
-        report_header += ' \n'
+        report_header += '\n'
         report_header += 'Application Specific Information:\n'
         for key in asi:
-            message = '\n'.join(asi[key])
-            report_header += '{}\n'.format(message)
+            asi_message = '\n'.join(asi[key])
+            report_header += '{}\n'.format(asi_message)
 
     last_exception = data_dict.get('lastExceptionBacktrace')
     if last_exception:
@@ -251,7 +255,7 @@ Translated Report (Full Report Below)
 
     kernel_triage = data_dict.get('ktriageinfo')
     if kernel_triage:
-        report_header += ' \n'
+        report_header += '\n'
         report_header += 'Kernel Triage:\n{}\n'.format(kernel_triage)
 
     return report_header, last_exception
@@ -321,14 +325,14 @@ def build_thread(thread_dict, thread_idx, used_images, max_width):
     thread_title = ''
     triggered = thread_dict.get('triggered')
     queue = thread_dict.get('queue')
-    name = thread_dict.get('name')
+    thread_name = thread_dict.get('name')
 
     if queue:
-        if not name:
-            name = ''
-        thread_title += 'Thread {} name: {} Dispatch queue: {}\n'.format(thread_idx, name, queue)
-    elif name:
-        thread_title += 'Thread {} name: {}\n'.format(thread_idx, name, queue)
+        if not thread_name:
+            thread_name = ''
+        thread_title += 'Thread {} name: {} Dispatch queue: {}\n'.format(thread_idx, thread_name, queue)
+    elif thread_name:
+        thread_title += 'Thread {} name: {}\n'.format(thread_idx, thread_name, queue)
 
     trigger_flag = ''
     if triggered:
@@ -355,7 +359,7 @@ def build_thread_state(data_dict):
     else:
         flavor_str = flavor
 
-    thread_state_str = ' \n'
+    thread_state_str = '\n'
     thread_state_str += 'Thread {} crashed with {}:\n  '.format(index, flavor_str)
     registers = thread_state.get('x')
     if registers:
@@ -389,7 +393,7 @@ def build_images(data_dict):
     used_images = data_dict.get('usedImages')
     images = sorted(used_images, key=lambda image_dict: image_dict.get('base'))
 
-    image_list = ' \n'
+    image_list = '\n'
     image_list += 'Binary Images:\n'
 
     global g_uuid_header_addr_map, g_name_info_map
@@ -403,18 +407,20 @@ def build_images(data_dict):
         arch = image.get('arch')
         uuid = image.get('uuid').upper()
         path = image.get('path')
-        is_user_image = path.find(g_crash_info.app_path) != -1
-        name = image.get('name')
-        image_list += '\t{:#x} - {:#x} {} {} <{}> {}\n'.format(base, end, name, arch, uuid, path)
+        if path:
+            is_user_image = path.find(g_crash_info.app_path) != -1
+        else:
+            is_user_image = False
+        image_name = image.get('name')
+
+        image_list += '\t{:#x} - {:#x} {} {} <{}> {}\n'.format(base, end, image_name, arch, uuid, path)
         if '-' not in uuid:
             uuid = get_canonical_uuid_for_uuid(uuid)
 
         global g_uuid_header_addr_map, g_name_info_map
         g_uuid_header_addr_map[uuid] = base
-        g_name_info_map[name] = (uuid, path, arch, is_user_image)
+        g_name_info_map[image_name] = (uuid, path, arch, is_user_image)
 
-    image_list += ' \n'
-    image_list += ' \n'
     image_list += 'sharedCache:\n'
     sharedCache = data_dict.get('sharedCache')
     base = sharedCache.get('base')
@@ -430,7 +436,7 @@ def build_images(data_dict):
 
 
 def build_vm_summary(data_dict):
-    vm_des = ' \n'
+    vm_des = '\n'
     vmSummary = data_dict.get('vmSummary')
     if not vmSummary:
         return ''
@@ -441,7 +447,7 @@ def build_vm_summary(data_dict):
 
 
 def build_report_notes(data_dict):
-    report_notes_str = ' \n'
+    report_notes_str = '\n'
     report_notes_str += 'Error Formulating Crash Report:\n'
     report_notes = data_dict.get('reportNotes')
     if not report_notes:
@@ -472,7 +478,10 @@ def symbolize_crash_file(file_path):
 
     final_lines = []
     for line in lines:
+        line = line.strip()
         if line == 'Last Exception Backtrace:':
+            if g_options.verbose:
+                print('开始解析Last Exception Backtrace')
             in_last_exception = True
             last_exception = Thread()
             last_exception.title = 'Last Exception Backtrace:\n'
@@ -483,6 +492,8 @@ def symbolize_crash_file(file_path):
                 final_lines.append(g_thread_list_place_holder)
                 thread_title += '{}\n'.format(line)
             elif line.endswith(':'):
+                if g_options.verbose:
+                    print('开始解析线程 {}'.format(line))
                 in_thread = True
                 thread_obj = Thread()
                 thread_title += '{}\n'.format(line)
@@ -504,6 +515,8 @@ def symbolize_crash_file(file_path):
                 frames = None
                 final_lines.append(g_last_exception_place_holder)
             else:
+                if g_options.verbose:
+                    print('解析frame {}'.format(line))
                 frame_obj = parse_frame_line(line)
                 frames.append(frame_obj)
 
@@ -516,6 +529,8 @@ def symbolize_crash_file(file_path):
                 thread_list.append(thread_obj)
                 thread_obj = None
             else:
+                if g_options.verbose:
+                    print('解析frame {}'.format(line))
                 frame_obj = parse_frame_line(line)
                 frames.append(frame_obj)
 
@@ -526,8 +541,8 @@ def symbolize_crash_file(file_path):
             else:
                 parse_image_line(line)
 
-        if line == '\n' or len(line) == 0:
-            final_lines.append(' \n')
+        if len(line) == 0:
+            final_lines.append('\n')
         else:
             if 'Hardware Model:' in line:
                 device_model = line.replace('Hardware Model:', '').strip()
@@ -587,7 +602,11 @@ def parse_frame_line(frame_line):
         g_max_name_width = n_name
 
     frame_obj = Frame()
-    frame_obj.idx = int(frame_idx)
+    if len(frame_idx) > 0:
+        frame_obj.idx = int(frame_idx)
+    else:
+        print('unexpected frame line: {}'.format(frame_line.encode()))
+
     frame_obj.image_name = image_name
     frame_obj.load_addr = int(load_addr, 16)
     if name_or_addr.startswith('0x'):
@@ -638,7 +657,7 @@ def symbolize_thread_list(last_exception_obj, thread_list):
         target_frames.extend(thread.frames)
 
     for frame in target_frames:
-        if frame.symbol_name:
+        if not g_options.force_resymbolize and frame.symbol_name:
             continue
 
         image_name = frame.image_name
@@ -812,12 +831,12 @@ def get_symbol_path_for_manual_dsym(dsym, uuid, target_arch):
             if g_options.verbose:
                 print('    No symbol files found in {}'.format(dsym))
     else:
-        names = os.listdir(dsym)
-        for name in names:
-            if not name.endswith('.dSYM'):
+        filenames = os.listdir(dsym)
+        for filename in filenames:
+            if not filename.endswith('.dSYM'):
                 continue
 
-            sym_dir = os.path.join(dsym, name)
+            sym_dir = os.path.join(dsym, filename)
             sym_path = get_symbol_path_for_manual_dsym(sym_dir, uuid, target_arch)
             if sym_path:
                 break
@@ -1110,31 +1129,55 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit(exit_code)
 
+    input_path = args.file.replace('"', '').replace("'", '')
+    if not os.path.exists(input_path):
+        print('No such file or directory: {}'.format(input_path))
+        sys.exit(exit_code)
+
     if args.force:
         g_options.force_resymbolize = True
 
     if args.verbose:
         g_options.verbose = True
 
-    input_file = args.file.replace('"', '').replace("'", '')
     if args.dsym:
         g_options.dsym = args.dsym
     else:
-        g_options.dsym = os.path.dirname(input_file)
+        g_options.dsym = os.path.dirname(input_path)
 
-    if input_file.endswith('.ips') or input_file.endswith('.crash'):
-        final_report = symbolize_crash_report(input_file)
-        ext = os.path.splitext(input_file)[1]
+    crash_report_paths = []
+    if input_path.endswith('.ips') or input_path.endswith('.crash'):
+        if not args.dsym:
+            g_options.dsym = os.path.dirname(input_path)
+        crash_report_paths.append(input_path)
+    elif os.path.isdir(input_path):
+        if not args.dsym:
+            g_options.dsym = input_path
 
-        output_file = input_file.replace(ext, '.sym.crash')
-        with open(output_file, 'w') as x_file:
-            written_size = x_file.write(final_report)
-
-            if written_size == len(final_report):
-                print('符号化的崩溃日志已写入{}'.format(output_file))
-            else:
-                print('崩溃日志写入失败\n{}'.format(final_report))
-
-            x_file.close()
+        names = os.listdir(input_path)
+        for name in names:
+            if name.endswith('.ips') or (name.endswith('.crash') and not name.endswith('.sym.crash')):
+                crash_report_path = os.path.join(input_path, name)
+                crash_report_paths.append(crash_report_path)
     else:
         print('unknown argument')
+        sys.exit(exit_code)
+
+    message = '\n\n符号化的崩溃日志:\n'
+    for crash_report_path in crash_report_paths:
+        print('开始符号化：{}'.format(crash_report_path))
+        crash_report = symbolize_crash_report(crash_report_path)
+        ext = os.path.splitext(crash_report_path)[1]
+
+        output_file = crash_report_path.replace(ext, '.sym.crash')
+        with open(output_file, 'w') as x_file:
+            written_size = x_file.write(crash_report)
+
+            if written_size == len(crash_report):
+                message += '    {}\n'.format(output_file)
+            else:
+                message += '    崩溃日志存储失败：\n{}'.format(crash_report)
+
+            x_file.close()
+
+    print(message)
