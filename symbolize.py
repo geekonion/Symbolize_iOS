@@ -664,7 +664,10 @@ def symbolize_thread_list(last_exception_obj, thread_list):
         if image_name == '???':
             continue
 
-        image_info = g_name_info_map[image_name]
+        image_info = g_name_info_map.get(image_name)
+        if not image_info:
+            continue
+            
         uuid = image_info[0]
         # 根据uuid找符号文件
         if not used_images_map.get(image_name):
